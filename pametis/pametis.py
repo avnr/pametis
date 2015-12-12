@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-#    pametis version 0.2 - Sitemap Analyzer/Parser
+#    pametis version 0.201 - Sitemap Analyzer/Parser
 #    Copyright (c) 2015 Avner Herskovits
 #
 #    MIT License

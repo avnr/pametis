@@ -3,12 +3,12 @@ from setuptools import setup
 setup(
     name = 'pametis',
     packages = ['pametis'],
-    version = '0.2',
+    version = '0.201',
     description = 'Sitemap Analyzer/Parser',
     author = 'Avner Herskovits',
     author_email = 'avnr_ at outlook.com',
     url = 'https://github.com/avnr/pametis',
-    download_url = 'https://github.com/avnr/pametis/tarball/0.2',
+    download_url = 'https://github.com/avnr/pametis/tarball/0.201',
     install_requires=[],
     classifiers=[
         'Development Status :: 4 - Beta',
