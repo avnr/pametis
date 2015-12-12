@@ -1,4 +1,4 @@
-from pametis import main
+from .pametis import main
 
 if '__main__' == __name__:
     main()
