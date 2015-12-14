@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-#    pametis version 0.201 - Sitemap Analyzer/Parser
+#    pametis version 0.3 - Sitemap Analyzer/Parser/Iterator
 #    Copyright (c) 2015 Avner Herskovits
 #
 #    MIT License
@@ -29,10 +29,21 @@
 # Imports - stdlib
 #
 from gzip import decompress
+from re import sub
 from urllib. request import urlopen
-import xml. etree. ElementTree as ET
+from xml. etree. ElementTree import fromstring
 
-NS = '{http://www.sitemaps.org/schemas/sitemap/0.9}'
+#
+# Helper class & function to hold results
+#
+class _Res( str, object ): pass
+def _res( url ):
+    res = _Res( url. find( 'loc' ). text )
+    res. lastmod, res. changefreq, res. priority = None, None, None
+    for i in url:
+        if i. tag in ( 'lastmod', 'changefreq', 'priority' ):
+            setattr( res, i. tag, i. text )
+    return res
 
 #
 # Use:
@@ -45,30 +56,22 @@ NS = '{http://www.sitemaps.org/schemas/sitemap/0.9}'
 # and decompressing gziped sitemaps.
 #
 def sitemap( url ):
-    map = urlopen( url )
-    inpstr = map. read()
+    with urlopen( url ) as map:
+        xmlstr = map. read()
     if url. endswith( '.gz' ):
-        xmlstr = decompress( inpstr ). decode( 'utf-8' )
+        xmlstr = decompress( xmlstr ). decode( 'utf-8' )
     else:
-        xmlstr = inpstr. decode( 'utf-8' )
-    xml = ET. fromstring( xmlstr )
-    inp, xmlstr = None, None
-    map. close()
+        xmlstr = xmlstr. decode( 'utf-8' )
+    xmlstr = sub( '<(urlset|sitemapindex)[^>]*>', '<\\1>', xmlstr, count = 1 )  # Get rid of namespaces
+    xml = fromstring( xmlstr )
+    xmlstr = None
     for child in xml:
-        # Namespaced sitemap
-        if NS + 'sitemap' == child. tag:
-            for loc in child. iter( NS + 'loc' ):
-                yield from sitemap( loc. text )
-        elif NS + 'url' == child. tag:
-            for loc in child. iter( NS + 'loc' ):
-                yield loc. text
-        # Namespaceless sitemap
-        elif 'sitemap' == child. tag:
+        if 'sitemap' == child. tag:
             for loc in child. iter( 'loc' ):
                 yield from sitemap( loc. text )
         elif 'url' == child. tag:
-            for loc in child. iter( 'loc' ):
-                yield loc. text
+            for url in child. iter( 'url' ):
+                yield _res( url )
 
 #
 # Can be used also as a command line utility, will print to stdout every leaf
