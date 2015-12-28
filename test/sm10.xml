@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<sitemapindex>
-    <sitemap>
-        <loc>https://raw.githubusercontent.com/avnr/pametis/master/test/sm20.xml</loc>
-    </sitemap>
-</sitemapindex>
+<urlset>
+    <url><loc>https://raw.githubusercontent.com/avnr/pametis/master/test/dummy11.html</loc></url>
+    <url><loc>https://raw.githubusercontent.com/avnr/pametis/master/test/dummy12.html</loc></url>
+    <url><loc>https://raw.githubusercontent.com/avnr/pametis/master/test/dummy13.html</loc></url>
+    <url><loc>https://raw.githubusercontent.com/avnr/pametis/master/test/dummy14.html</loc></url>
+    <url><loc>https://raw.githubusercontent.com/avnr/pametis/master/test/dummy15.html</loc></url>
+    <url><loc>https://raw.githubusercontent.com/avnr/pametis/master/test/dummy16.html</loc></url>
+    <url><loc>https://raw.githubusercontent.com/avnr/pametis/master/test/dummy17.html</loc></url>
+    <url><loc>https://raw.githubusercontent.com/avnr/pametis/master/test/dummy18.html</loc></url>
+    <url><loc>https://raw.githubusercontent.com/avnr/pametis/master/test/dummy19.html</loc></url>
+</urlset>
