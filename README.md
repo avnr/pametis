@@ -1,20 +1,189 @@
-pametis - Sitemap Analyzer/Parser/Iterator
+pametis - Sitemap Analyzer/Parser/Iterator/Spider
 ===
 
-The `pametis` package provides a single function, `sitemap`, that iterates over all leaf urls in
-a [sitemap](http://sitemaps.org), even if the sitemap is nested and even if the nested sitemaps
-are compressed.
+1. Introduction
+---
 
-Usage is simple:
+The `pametis` (reverse of `sitemap`) package provides a point-and-shoot function, `sitemap`, that iterates over all leaf urls in a [sitemap](http://sitemaps.org) in a simple manner:
+
+    for url in sitemap( 'http://example.com/sitemap.xml' ):
+        print( url )
+
+Behind the scene `sitemap` provides several facilities:
+
+- URLs can be filtered by regular expression.
+
+- The urls are cached, enabling various iteration scenarios including iteration only over new urls or over urls removed from the sitemap. It is possible to resume interrupted iterations, and to split iterations into several runs.
+
+- The cache can be stored in an Sqlite3 database (the default) or Postgres database (recommended for better performance, ability to run inside threads, and ability to decouple the cache storage from the package container). It is also possible to disable caching.
+
+- The cache driver interface is documented and it is possible to use custom cache drivers, e.g., for use with other data stores.
+
+- Ability to iterate also sitemaps pointed to by a [robots.txt]( http://www.robotstxt.org) or over a list of urls stored in a file.
+
+- The spider interface is documented and it is possible to get the source urls from a custom spider (e.g., a search engine or a web crawler).
+
+While this documentation attempts to cover all `pametis` interfaces, for most uses it is enough to read the reference of the `sitemap` function.
+
+2. Reference
+---
+
+_pametis. sitemap( sitemap_url, *args )_
+
+An iterator over the sitemap pointed to by `sitemap_url`, which can be the address of a [sitemap](http://sitemaps.org) or the address of [robots.txt]( http://www.robotstxt.org) that references one or more sitemaps. Iteration is performed over all urls (“locations”) in the sitemap, recursing into nested sitemaps, including gzipped sitemaps.
+
+Each iteration yields a single string url, which has 3 additional attributes, `lastmod`, `changefreq` and `priority`, which correspond with their respective value in the sitemap, or `None` for any value not provided by the sitemap. For example:
 
     from pametis import sitemap
 
-    for url in sitemap( 'http://example.com/sitemap.xml' ):
+    sitemap_url = 'http://example.com/sitemap.xml'
+
+    for url in sitemap( sitemap_url ):
         print( url, url.lastmod, url.changefreq, url.priority )
 
-The url can be used as a regular string. In addition it has three attributes, `lastmod`, `changefreq` and
-`priority`, which correspond with their respective value in the sitemap, or `None` for any value not
-provided by the sitemap.
+It is possible to filter urls using a regular expression, which can be provided as either as a string or as a compiled `re` object, e.g.: `sitemap( sitemap_url, "/posts/" )` or `sitemap( sitemap_url, re.compile( "/posts/" ))`.
+
+The `sitemap` function can accept several options that modify its behavior. The options all have the form OPT.*option_name* and are added as arguments to the call to `sitemap`. In the following example `sitemap` is called with the `OPT.NOCACHE` option, which means that the cache mechanism will be disabled:
+
+    from pametis import sitemap, OPT
+
+    sitemap_url = 'http://example.com/sitemap.xml'
+
+    for url in sitemap( sitemap_url, OPT.NOCACHE ):
+        print( url, url.lastmod, url.changefreq, url.priority )
+
+Following is a list of all `sitemap` options:
+
+OPT.CACHED - Iterate over urls already stored in the cache, rather than have a spider fetch the urls.
+
+OPT.REMOVE - Iterate over urls that were removed in the recent sitemap iteration. NOTE: In order to iterate removed urls the previous iteration must be complete; attempt to iterate removals after a partial iteration will raise a `CantRemove` exception.
+
+OPT.NEWONLY - Iterate only over new urls found in the sitemap.
+
+OPT.PARTIAL - The sitemap provided for the current iteration is partial, the current iteration will be later resumed with one or more sitemaps.
+
+OPT.RESUME - The previous iteration was partial either because the sitemap is split over several sources or because it was interrupted prematurely, and it is now being resumed.
+
+OPT.CACHEALL - Cache all urls in the sitemap, even those that don’t pass the filter.
+
+OPT.NOCACHE - Don’t cache the sitemap.
+
+All options except for OPT.REMOVE and OPT.NOCACHE can be combined. Attempting to combine OPT.REMOVE or OPT.NOCACHE with another option will raise an `AmbiguousOptions` exeption.  The following example demonstrates iteration over only new urls, split between two sitemaps:
+
+    from pametis import sitemap, OPT
+
+    for url in sitemap( 'http://example.com/sitemap_1.xml', OPT.NEWONLY, OPT.PARTIAL ):
+        print( url, url.lastmod, url.changefreq, url.priority )
+
+    for url in sitemap( 'http://example.com/sitemap_2.xml', OPT.NEWONLY, OPT.RESUME ):
+        print( url, url.lastmod, url.changefreq, url.priority )
+
+The default cache is an Sqlite3 cache stored in a file named `pametis_cache.db` in the current working directory. The default cache can be overridden by specifying an alternative cache driver. `pametis` has two native cache drivers, and can accept custom drivers (described further below). The native cache drivers are `sqlite` and `postgres`, both generated by calling their factories with the database connection parameters. In the following example `sitemap` will run with a memory-resident sqlite cache:
+
+    from pametis import sitemap, sqlite
+
+    sitemap_url = 'http://example.com/sitemap.xml'
+
+    for url in sitemap(sitemap_url, sqlite( ':memory:' )):
+        print( url, url.lastmod, url.changefreq, url.priority )
+
+Running `sitemap` with a postgres cache:
+
+    from pametis import sitemap, postgres
+
+    sitemap_url = 'http://example.com/sitemap.xml'
+
+    for url in sitemap( sitemap_url, postgres( 'postgres://postgres@localhost/pametis' )):
+        print( url, url.lastmod, url.changefreq, url.priority )
+
+NOTE: The `pametis` architecture assumes that only one spider per domain per cache runs at a time. This assumption should typically be valid, assuming one doesn’t wish to bomb the target site at a high rate.
+
+The default spider will get urls from the url of a sitemap.xml or robots.txt. The default spider can be overridden by specifying an alternative spider. `pametis` has two native spiders, the other, non-default called `file_spider`. It is also possible to call `sitemap` with a custom spider (described further below). The `file_spider` accepts as input a text file in which each url is in a separate line. Blank lines and lines starting with a hash ("#") are ignored. Note that a `sitemap_url` is still required by the `sitemap` function as the `sitemap_url` tells it which domain is being cached. The `sitemap` function currently does not verify that the urls returned by `file_spider` are in the same domain as `sitemap_url`. If the domains are not the same, results may be unexpected. Here is an example of calling `sitemap` with `file_spider`, reading the urls from the text file `links.txt`:
+
+    from pametis import sitemap, file_spider
+
+    sitemap_url = 'http://example.com/sitemap.xml'
+
+    for url in sitemap( sitemap_url, file_spider( 'links.txt' )):
+        print( url, url.lastmod, url.changefreq, url.priority )
+
+`file_spider` is a simple and convenient way to use `pametis` with command line crawlers such as `wget`. An example of creating with `wget` a list of links to crawl can be found [here]( http://stackoverflow.com/questions/3948947).
+
+NOTE: Options, a cache driver, filter, spider, these can all be specified to the `sitemap` function at any combination or order. The `sitemap` function requires only the `sitemap_url` to be in a specific (the first) position.
+
+_pametis.configure( *args )_
+
+At times specifying all `sitemap` configuration options in the function call may be redundant across multiple calls, as well as visually cluttered. The `configure` function addresses this by providing the ability to set the `sitemap` defaults (except `sitemap_url`) in a single call. In the following example the `configure` function is used to specify an alternative cache driver, a default filter, and to specify that all iterations will be only over new urls:
+
+    from pametis import configure, sitemap, postgres, OPT
+
+    configure( postgres( 'postgres://postgres@localhost/pametis' ), '/post/', OPT.NEWONLY )
+    sitemap_url = 'http://example.com/sitemap.xml'
+
+    for url in sitemap( sitemap_url ):
+        print( url, url.lastmod, url.changefreq, url.priority )
+
+Using `configure` does not prevent from specifying options, drivers, spiders and filters in the call to `sitemap`.
+
+_pametis.Pametis_cache_
+
+`Pametis_cache` is the base class of all `pametis` cache drivers. One can write a custom cache driver by inheriting the `Pametis_cache` class and implementing its methods. If the custom cache driver is planned to run atop an SQL database, it may be simpler to use the Sql_cache class described next, which already implements `Pametis_cache` in a generic SQL implementation. The `Pametis_cache` methods are as follows:
+
+*Pametis.Pametis_cache._\_init_\_( self, domain, new_version = True )* - Initalizes the cache
+
+*Pametis.Pametis_cache._\_del_\_( self )* - Recommended, handles winding up the connection
+
+*Pametis.Pametis_cache.is_current( self, url )* - Returns whether the url has been updated in the recent vaersion
+
+*Pametis.Pametis_cache.is_completed( self )* - Returns whether the recent iteration completed
+
+*Pametis.Pametis_cache.cache( self, url )* - Stores the url in the cache
+
+*Pametis.Pametis_cache.finish( self )* - Marks the current iteration as complete
+
+*Pametis.Pametis_cache.cached( self )* - Iterates over all urls in the cache
+
+*Pametis.Pametis_cache.remove( self )* - Iterates over all urls excluded in the recent iteration and removes them from the cache after yielding their values
+
+*Pametis.Pametis_cache.reset( self )* - Removes all urls from the cache and zeroes the current iteration id
+
+_pametis.Sql_cache_
+
+A class implementing the `Pametis_class` interface for SQL databases in a generic way. It enables the implementation of a cache over an SQL database by inheriting the `Sql_cache` class in a new class, and setting the following class attributes with the implementation-specific parameters:
+
+_stub_ - '?' / '%s' / etc., the DB-API arguments placehoder
+
+_args, kwargs_ - arguments for DB-API connect
+
+_Module_ - 'sqlite3' / 'psycopg2' / etc., the module that implements the DB-API
+
+The following examples illustrate the cache driver factory implementations for the Sqlite and Postgres databases:
+
+    # cache factory for sqlite
+    def sqlite( *args, **kwargs ):
+        class _Cache( Sql_cache, Pametis_cache ): pass
+        _Cache. stub = '?'
+        _Cache. args = args
+        _Cache. kwargs = kwargs
+        _Cache. module = 'sqlite3'
+        return _Cache
+
+    # cache factory for postgres
+    def postgres( *args, **kwargs ):
+        class _Cache( Sql_cache, Pametis_cache ): pass
+        _Cache. stub = '%s'
+        _Cache. args = args
+        _Cache. kwargs = kwargs
+        _Cache. module = 'psycopg2'
+       return _Cache
+
+
+_pametis.Pametis_spider_
+
+The `Pametis_spider` class is the base class for all `pametis` spiders. It is possible to write a custom spider by inheriting `Pametis_spider` and implementing its `__call__` method with the following interface: `__call__( self, url )` where url is the `sitemap_url` provided to the `sitemap` function.
+
+3. CLI Usage
+---
 
 `pametis` can be used also as a command line utility, and it will print to stdout all leaf urls:
 
@@ -24,29 +193,57 @@ Or, if installed on the module path:
 
     $ python -m pametis http://example.com/sitemap.xml
 
-Installation
+The command line utility can accept as a second argument a regular expression filter:
+
+    $ pametis http://example.com/sitemap.xml /posts/
+
+The command line utility accepts options that correspond to the various `sitemap` function arguments:
+
+    -h, --help          show a help message and exit
+    -a, --cacheall      cache also urls the don't pass the filter
+    -c, --cached        use cached urls
+    -n, --nocach        don't use a cache
+    -N, --newonly       show only new urls
+    -p, --partial       this sitemap has only part of the domain's urls
+    -r, --remove        remove non-current urls
+    -R, --resume        resume an incomplete iteration
+    --sqlite SQLITE     filename to hold sqlite cache
+    --postgres POSTGRES url of postgres database to hold cache
+    --file FILE         get urls from file rather than the web
+
+4. Installation
 ---
-
-There are several options for installing `pametis`:
-
-- Copy the file `pametis.py` to your project. It is just a single file with no dependencies. Or,
 
 - Install using `pip install pametis`. Or,
 
 - Clone the project from GitHub - `git clone https://github.com/avnr/pametis`.
 
-License
+Requires python3. No external dependencies for default settings. ` psycopg2` is needed to use postgres for caching.
+
+5. License
 ---
 
 MIT License
 
 
-Revisions History:
+6. Revisions History:
 ---
+
+Version 0.4, 2015-12-30
+
+- Add caching
+
+- Add file spider
+
+- Add robots.txt to sitemap spider
+
+- Add filters
 
 Version 0.3, 2015-12-14:
 
 - Return per leaf the lastmod, changefreq and priority attributes
 
 - Change sitemap proccessing to ignore namespaces, thus increasing speed, reducing memory footprint, reducing code complexity
+
+
 
